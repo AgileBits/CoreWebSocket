@@ -9,7 +9,7 @@
 #ifndef __CORE_WEB_SOCKET_WEB_SOCKET__
 #define __CORE_WEB_SOCKET_WEB_SOCKET__ 1
 
-#include "CoreWebSocket/CoreWebSocket.h"
+#include "CoreWebSocket.h"
 
 #define __WebSocketMaxHeaderKeyLength 4096
 

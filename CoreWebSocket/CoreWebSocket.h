@@ -27,10 +27,10 @@
 #include <sys/socket.h>
 #include <netinet/in.h>
 
-#include "CoreWebSocket/WebSocket.h"
-#include "CoreWebSocket/WebSocketTypes.h"
-#include "CoreWebSocket/WebSocketClient.h"
-#include "CoreWebSocket/cuEnc64.h"
+#include "WebSocketTypes.h"
+#include "WebSocket.h"
+#include "WebSocketClient.h"
+#include "cuEnc64.h"
 
 #endif
 

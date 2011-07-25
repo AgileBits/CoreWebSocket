@@ -26,8 +26,8 @@ xmlns:xul="http://www.mozilla.org/keymaster/gatekeeper/there.is.only.xul"
     <script type="text/javascript" charset="utf-8">
       
       function Osc(options) {
-        options = options || {}
-        this.port = options['port'] || 6001
+        options = options || { 'host':'127.0.0.1' }
+        this.port = options['port'] || 60001
         this.host = options['host'] || document.location.hostname
         if ("WebSocket" in window) {
           this.webSocket = new WebSocket('ws://' + this.host + ':' + this.port)

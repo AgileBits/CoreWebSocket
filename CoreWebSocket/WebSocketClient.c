@@ -11,7 +11,7 @@
 #pragma mark Write
 
 // Internal function, write provided buffer in a frame [0x00 ... 0xff]
-CFIndex __WebSocketClientWriteFrame(WebSocketClientRef client, const UInt8 *buffer, CFIndex length) {
+static CFIndex __WebSocketClientWriteFrame(WebSocketClientRef client, const UInt8 *buffer, CFIndex length) {
   CFIndex bytes = -1;
   if (client) {
     if (buffer) {
@@ -51,7 +51,7 @@ CFIndex WebSocketClientWriteWithString(WebSocketClientRef client, CFStringRef va
 
 bool __WebSocketClientWriteHandShake(WebSocketClientRef client);
 
-void __WebSocketClientReadCallBack(CFReadStreamRef stream, CFStreamEventType eventType, void *info) {
+static void __WebSocketClientReadCallBack(CFReadStreamRef stream, CFStreamEventType eventType, void *info) {
   WebSocketClientRef client = info;
   if (client) {
     switch (eventType) {
@@ -145,7 +145,7 @@ bool __WebSocketClientWriteWithHTTPMessage(WebSocketClientRef client, CFHTTPMess
   return success;
 }
 
-bool __WebSocketClientWriteHandShakeDraftIETF_HYBI_00(WebSocketClientRef client) {
+static bool __WebSocketClientWriteHandShakeDraftIETF_HYBI_00(WebSocketClientRef client) {
   bool success = 0;
   if (client) {
     if (client->protocol == kWebSocketProtocolDraftIETF_HYBI_00) {
@@ -200,7 +200,7 @@ bool __WebSocketClientWriteHandShakeDraftIETF_HYBI_00(WebSocketClientRef client)
 // http://www.opensource.apple.com/source/CFNetwork/CFNetwork-128/HTTP/CFHTTPAuthentication.c
 // See _CFEncodeBase64 function. The source code has been released under
 // Apple Public Source License Version 2.0 http://www.opensource.apple.com/apsl/
-CFStringRef __WebSocketCreateBase64StringWithData(CFAllocatorRef allocator, CFDataRef inputData) {
+static CFStringRef __WebSocketCreateBase64StringWithData(CFAllocatorRef allocator, CFDataRef inputData) {
 	unsigned outDataLen;	
 	CFStringRef result = NULL;
 	unsigned char *outData = cuEnc64(CFDataGetBytePtr(inputData), (unsigned int)CFDataGetLength(inputData), &outDataLen);
@@ -217,7 +217,7 @@ CFStringRef __WebSocketCreateBase64StringWithData(CFAllocatorRef allocator, CFDa
 	return result;
 }
 
-bool __WebSocketClientWriteHandShakeDraftIETF_HYBI_06(WebSocketClientRef client) {
+static bool __WebSocketClientWriteHandShakeDraftIETF_HYBI_06(WebSocketClientRef client) {
   bool success = 0;
   if (client) {
     if (client->protocol == kWebSocketProtocolDraftIETF_HYBI_06) {
@@ -274,7 +274,7 @@ bool __WebSocketClientWriteHandShake(WebSocketClientRef client) {
   return success;
 }
 
-void __WebSocketClientWriteCallBack(CFWriteStreamRef stream, CFStreamEventType eventType, void *info) {
+static void __WebSocketClientWriteCallBack(CFWriteStreamRef stream, CFStreamEventType eventType, void *info) {
   WebSocketClientRef client = info;
   if (client) {
     switch (eventType) {
@@ -458,7 +458,7 @@ CFDataRef __WebSocketCreateSHA1DataWithString(CFAllocatorRef allocator, CFString
   return data;
 }
 
-bool __WebSocketClientHandShakeConsumeHTTPMessage(WebSocketClientRef client) {
+static bool __WebSocketClientHandShakeConsumeHTTPMessage(WebSocketClientRef client) {
   bool success = 0;
   if (client) {
     UInt8 buffer[4096];
@@ -480,7 +480,7 @@ fin:
   return success;
 }
 
-bool __WebSocketClientHandShakeUpdateProtocolBasedOnHTTPMessage(WebSocketClientRef client) {
+static bool __WebSocketClientHandShakeUpdateProtocolBasedOnHTTPMessage(WebSocketClientRef client) {
   bool success = 0;
   if (client) {
     
