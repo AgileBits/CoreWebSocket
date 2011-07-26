@@ -155,6 +155,9 @@ static bool __WebSocketClientWriteHandShakeDraftIETF_HYBI_00(WebSocketClientRef 
 			CFStringRef origin = CFHTTPMessageCopyHeaderFieldValue(client->handShakeRequestHTTPMessage, CFSTR("Origin"));
 			CFStringRef host = CFHTTPMessageCopyHeaderFieldValue(client->handShakeRequestHTTPMessage, CFSTR("Host"));
 			
+			if (client->origin) CFRelease(client->origin);
+			client->origin = CFRetain(origin);
+			
 			CFHTTPMessageRef response = CFHTTPMessageCreateEmpty(NULL, 0);
 			CFHTTPMessageAppendBytes(response, (const UInt8 *)"HTTP/1.1 101 Web Socket Protocol Handshake\r\n", 44);
 			CFHTTPMessageSetHeaderFieldValue(response, CFSTR("Upgrade"), CFSTR("WebSocket"));
@@ -180,7 +183,7 @@ static bool __WebSocketClientWriteHandShakeDraftIETF_HYBI_00(WebSocketClientRef 
 				CFRelease(data);
 			}
 			
-			CFShow(response);
+			// CFShow(response);
 			
 			success = __WebSocketClientWriteWithHTTPMessage(client, response);
 			
@@ -391,6 +394,11 @@ WebSocketClientRef WebSocketClientRelease(WebSocketClientRef client) {
 			if (client->uuid) {
 				CFRelease(client->uuid);
 				client->uuid = NULL;
+			}
+			
+			if (client->origin) {
+				CFRelease(client->origin);
+				client->origin = NULL;
 			}
 			
 			CFAllocatorDeallocate(allocator, client);

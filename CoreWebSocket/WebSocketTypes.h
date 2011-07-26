@@ -64,6 +64,7 @@ struct WebSocketClient {
 	CFIndex retainCount;
 	
 	CFStringRef uuid;
+	CFStringRef origin;
 
 	WebSocketRef webSocket;
 	CFSocketNativeHandle handle;
