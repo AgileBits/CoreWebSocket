@@ -319,6 +319,8 @@ WebSocketClientRef WebSocketClientCreate(WebSocketRef webSocket, CFSocketNativeH
 			client->uuid = CFUUIDCreateString(webSocket->allocator, uuidRef);
 			CFRelease(uuidRef);
 			
+			client->origin = NULL;
+			
 			client->webSocket = WebSocketRetain(webSocket);
 			client->handle = handle;
 			
