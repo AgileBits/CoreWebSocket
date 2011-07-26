@@ -230,7 +230,7 @@ static bool __WebSocketClientWriteHandShakeDraftIETF_HYBI_06(WebSocketClientRef 
 			CFDataRef keyWithMagickSHA1 = __WebSocketCreateSHA1DataWithString(client->allocator, keyWithMagick, kCFStringEncodingUTF8);
 			CFStringRef keyWithMagickSHA1Base64 = __WebSocketCreateBase64StringWithData(client->allocator, keyWithMagickSHA1);
 			
-			CFShow(keyWithMagickSHA1Base64);
+			// CFShow(keyWithMagickSHA1Base64);
 			
 			CFStringRef origin = CFHTTPMessageCopyHeaderFieldValue(client->handShakeRequestHTTPMessage, CFSTR("Sec-WebSocket-Origin"));
 			CFStringRef host = CFHTTPMessageCopyHeaderFieldValue(client->handShakeRequestHTTPMessage, CFSTR("Host"));
@@ -550,7 +550,7 @@ bool __WebSocketClientReadHandShake(WebSocketClientRef client) {
 				// Dump http message
 				CFDictionaryRef headerFields = CFHTTPMessageCopyAllHeaderFields(client->handShakeRequestHTTPMessage);
 				if (headerFields) {
-					CFShow(headerFields);
+					// CFShow(headerFields);
 					CFRelease(headerFields);
 				}
 				//        printf("__WebSocketClientReadHandShake: protocol %i\n", client->protocol);
