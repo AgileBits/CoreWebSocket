@@ -28,9 +28,9 @@ typedef        WebSocketClient *WebSocketClientRef;
 typedef enum WebSocketProtocol WebSocketProtocol;
 
 enum WebSocketProtocol {
-  kWebSocketProtocolUnknown           = -1,
-  kWebSocketProtocolDraftIETF_HYBI_00 =  0,
-  kWebSocketProtocolDraftIETF_HYBI_06 =  6
+	kWebSocketProtocolUnknown           = -1,
+	kWebSocketProtocolDraftIETF_HYBI_00 =  0,
+	kWebSocketProtocolDraftIETF_HYBI_06 =  6
 };
 
 #pragma mark WebSocket Callbacks
@@ -42,64 +42,66 @@ typedef void (*WebSocketDidClientReadCallback)    (WebSocketRef webSocket, WebSo
 typedef struct WebSocketCallbacks WebSocketCallbacks;
 
 struct WebSocketCallbacks {
-  WebSocketDidAddClientCallback     didAddClientCallback;
-  WebSocketWillRemoveClientCallback willRemoveClientCallback;
-  WebSocketDidClientReadCallback    didClientReadCallback;
+	WebSocketDidAddClientCallback     didAddClientCallback;
+	WebSocketWillRemoveClientCallback willRemoveClientCallback;
+	WebSocketDidClientReadCallback    didClientReadCallback;
 };
 
 #pragma mark WebSocket Client
 
 enum WebSocketClientState {
-  kWebSocketClientInitialized,
-  kWebSocketClientReadStreamOpened,
-  kWebSocketClientWriteStreamOpened,
-  kWebSocketClientHandShakeError,
-  kWebSocketClientHandShakeRead,
-  kWebSocketClientHandShakeSent,
-  kWebSocketClientReady
+	kWebSocketClientInitialized,
+	kWebSocketClientReadStreamOpened,
+	kWebSocketClientWriteStreamOpened,
+	kWebSocketClientHandShakeError,
+	kWebSocketClientHandShakeRead,
+	kWebSocketClientHandShakeSent,
+	kWebSocketClientReady
 };
 
 struct WebSocketClient {
-  CFAllocatorRef allocator;
-  CFIndex retainCount;
-  WebSocketRef webSocket;
-  CFSocketNativeHandle handle;
-  CFReadStreamRef read;
-  CFWriteStreamRef write;
-  
-  CFMutableArrayRef writeQueue;
-  
-  CFHTTPMessageRef handShakeRequestHTTPMessage;
-  WebSocketProtocol protocol;
-  
-  // Linked list of clients
-  WebSocketClientRef previousClient;
-  WebSocketClientRef nextClient;
-  
-  CFStreamClientContext context;
-  
-  bool didReadHandShake;
-  bool didWriteHandShake;
-  
+	CFAllocatorRef allocator;
+	CFIndex retainCount;
+	
+	CFStringRef uuid;
+
+	WebSocketRef webSocket;
+	CFSocketNativeHandle handle;
+	CFReadStreamRef read;
+	CFWriteStreamRef write;
+
+	CFMutableArrayRef writeQueue;
+
+	CFHTTPMessageRef handShakeRequestHTTPMessage;
+	WebSocketProtocol protocol;
+
+	// Linked list of clients
+	WebSocketClientRef previousClient;
+	WebSocketClientRef nextClient;
+
+	CFStreamClientContext context;
+
+	bool didReadHandShake;
+	bool didWriteHandShake;
 };
 
 struct WebSocket {
-  CFAllocatorRef allocator;
-  CFIndex retainCount;
-  void *userInfo;
-  
-  struct sockaddr_in addr;
-  CFSocketRef socket;
-  CFReadStreamRef read;
-  CFWriteStreamRef write;
-  
-  CFIndex clientsUsedLength;
-  CFIndex clientsLength;
-  WebSocketClientRef *clients;
-  
-  CFSocketContext context;
-  
-  WebSocketCallbacks callbacks;
+	CFAllocatorRef allocator;
+	CFIndex retainCount;
+	void *userInfo;
+
+	struct sockaddr_in addr;
+	CFSocketRef socket;
+	CFReadStreamRef read;
+	CFWriteStreamRef write;
+
+	CFIndex clientsUsedLength;
+	CFIndex clientsLength;
+	WebSocketClientRef *clients;
+
+	CFSocketContext context;
+
+	WebSocketCallbacks callbacks;
 };
 
 #endif
