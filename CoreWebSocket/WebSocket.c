@@ -204,7 +204,8 @@ CFIndex __WebSocketRemoveClient(WebSocketRef webSocket, WebSocketClientRef clien
 #pragma mark Callbacks
 
 void __WebSocketAcceptCallBack(CFSocketRef socket, CFSocketCallBackType type, CFDataRef address, const void *sock, void *info) {
-  WebSocketRef webSocket = (WebSocketRef)info;
-  WebSocketClientRef client = WebSocketClientCreate(webSocket, *(CFSocketNativeHandle *)sock);
-  printf("adding %p client\n", client);
+	WebSocketRef webSocket = (WebSocketRef)info;
+	WebSocketClientCreate(webSocket, *(CFSocketNativeHandle *)sock);
+//  WebSocketClientRef client = WebSocketClientCreate(webSocket, *(CFSocketNativeHandle *)sock);
+//  printf("adding %p client\n", client);
 }
