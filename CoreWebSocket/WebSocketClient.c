@@ -21,7 +21,8 @@ static CFIndex __WebSocketClientWriteFrame(WebSocketClientRef client, const UInt
 					bytes = CFWriteStreamWrite(client->write, buffer, length);
 					CFWriteStreamWrite(client->write, (UInt8[]){ 0xff }, 1);
 				} else {
-					//printf("__WebSocketClientWriteFrame: can't write to stream\n");
+					client->alive = false;
+					printf("__WebSocketClientWriteFrame: can't write to stream\n");
 				}
 			}
 		}
@@ -291,6 +292,7 @@ static void __WebSocketClientWriteCallBack(CFWriteStreamRef stream, CFStreamEven
 				break;
 				
 			case kCFStreamEventErrorOccurred:
+				client->alive = false;
 				printf("kCFStreamEventErrorOccurred (write)\n");
 				CFErrorRef error = CFWriteStreamCopyError(stream);
 				if (error) {
@@ -320,6 +322,7 @@ WebSocketClientRef WebSocketClientCreate(WebSocketRef webSocket, CFSocketNativeH
 			CFRelease(uuidRef);
 			
 			client->origin = NULL;
+			client->alive = true;
 			
 			client->webSocket = WebSocketRetain(webSocket);
 			client->handle = handle;
