@@ -17,6 +17,7 @@
 WebSocketClientRef WebSocketClientCreate  (WebSocketRef webSocket, CFSocketNativeHandle handle);
 WebSocketClientRef WebSocketClientRetain  (WebSocketClientRef client);
 WebSocketClientRef WebSocketClientRelease (WebSocketClientRef client);
+void WebSocketClientDisconnect(WebSocketClientRef client);
 
 #pragma mark Write
 

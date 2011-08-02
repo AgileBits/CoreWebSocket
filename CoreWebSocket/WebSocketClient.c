@@ -378,43 +378,52 @@ WebSocketClientRef WebSocketClientRetain(WebSocketClientRef client) {
 }
 
 WebSocketClientRef WebSocketClientRelease(WebSocketClientRef client) {
-	if (client) {
-		if (--client->retainCount == 0) {
-			CFAllocatorRef allocator = client->allocator;
-			
-			if (client->read) {
-				if (CFReadStreamGetStatus(client->read) != kCFStreamStatusClosed)
-					CFReadStreamClose(client->read);
-				CFRelease(client->read);
-				client->read = NULL;
-			}
-			
-			if (client->write) {
-				if (CFWriteStreamGetStatus(client->write) != kCFStreamStatusClosed)
-					CFWriteStreamClose(client->write);
-				CFRelease(client->write);
-				client->write = NULL;
-			}
-			
-			if (client->uuid) {
-				CFRelease(client->uuid);
-				client->uuid = NULL;
-			}
-			
-			if (client->origin) {
-				CFRelease(client->origin);
-				client->origin = NULL;
-			}
-			
-			CFAllocatorDeallocate(allocator, client);
-			client = NULL;
-			
-			if (allocator)
-				CFRelease(allocator);
+	if (!client) return NULL;
+	
+	if (--client->retainCount == 0) {
+		CFAllocatorRef allocator = client->allocator;
+		
+		WebSocketClientDisconnect(client);
+		
+		if (client->uuid) {
+			CFRelease(client->uuid);
+			client->uuid = NULL;
 		}
+		
+		if (client->origin) {
+			CFRelease(client->origin);
+			client->origin = NULL;
+		}
+		
+		CFAllocatorDeallocate(allocator, client);
+		client = NULL;
+		
+		if (allocator)
+			CFRelease(allocator);
 	}
+	
 	return client;
 }
+
+void WebSocketClientDisconnect(WebSocketClientRef client) {
+	if (!client) return;
+	
+	if (client->read) {
+		if (CFReadStreamGetStatus(client->read) != kCFStreamStatusClosed)
+			CFReadStreamClose(client->read);
+		CFRelease(client->read);
+		client->read = NULL;
+	}
+	
+	if (client->write) {
+		if (CFWriteStreamGetStatus(client->write) != kCFStreamStatusClosed)
+			CFWriteStreamClose(client->write);
+		CFRelease(client->write);
+		client->write = NULL;
+	}
+}
+
+
 
 #pragma Handshake
 
