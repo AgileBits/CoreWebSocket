@@ -8,7 +8,7 @@
 
 #include "WebSocketClient.h"
 
-#define DEBUG_WEBSOCKETCLIENT 1
+#define DEBUG_WEBSOCKETCLIENT 0
 
 
 #pragma pack(1)
@@ -372,7 +372,7 @@ static void __WebSocketPerformHandshake(WebSocketClientRef client) {
 	}
 	
 	if (!CFWriteStreamCanAcceptBytes(client->write)) {
-		printf("[CWS] TODO: Didn't handshake and client doesn't accept bytes yet. Write callback will handle writting handshake as soon as we can write.\r");
+		if (DEBUG_WEBSOCKETCLIENT) printf("[CWS] TODO: Didn't handshake and client doesn't accept bytes yet. Write callback will handle writting handshake as soon as we can write.\r");
 		return;
 	}	
 	
@@ -398,11 +398,11 @@ static void __WebSocketClientRead(WebSocketClientRef client, CFReadStreamRef str
 	if (client->protocol == kWebSocketProtocolDraftIETF_HYBI_06 || client->protocol == kWebSocketProtocolDraftIETF_HYBI_00) {
 		__WebSocketClientRead_HYBI_06(client, stream);
 	}
-	if (client->protocol == kWebSocketProtocolDraftIETF_HYBI_07) {
+	else if (client->protocol == kWebSocketProtocolDraftIETF_HYBI_07) {
 		__WebSocketClientRead_HYBI_07(client, stream);
 	}
 	else {
-		printf("[CWS] Failed to read, protocol not supported\r");
+		printf("[CWS] Failed to read, protocol not supported: %jd", (intmax_t)client->protocol);
 	}
 	
 	if (!client->didWriteHandShake && CFWriteStreamCanAcceptBytes(client->write)) {
@@ -466,7 +466,7 @@ bool __WebSocketClientWriteWithHTTPMessage(WebSocketClientRef client, CFHTTPMess
 		}
 	}
 	
-	printf(success ? "Success\r" : "Failed\r");
+	if (DEBUG_WEBSOCKETCLIENT) printf(success ? "Success\r" : "Failed\r");
 
 	return success;
 }
