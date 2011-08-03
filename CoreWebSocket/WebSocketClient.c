@@ -8,43 +8,200 @@
 
 #include "WebSocketClient.h"
 
+#define DEBUG_WEBSOCKETCLIENT 1
+
+
+#pragma pack(1)
+typedef struct FrameHeader_HYBI_07 {
+	unsigned int opcode:4;
+	unsigned int rsv3:1;
+	unsigned int rsv2:1;
+	unsigned int rsv1:1;
+	unsigned int fin:1;
+	
+	unsigned int payloadLen:7;
+	unsigned int mask:1;
+	
+	
+	union {
+		struct {
+			UInt8 maskingKey[4];
+			UInt8 data[0];
+		} mpayload125;
+		
+		struct { 
+			UInt16 len; // length stored here if (payloadLen == 126)
+			UInt8 maskingKey[4];
+			UInt8 data[0];
+		} mpayload126;
+		
+		struct { 
+			UInt64 len; // length stored here if (payloadLen == 127)
+			UInt8 maskingKey[4];
+			UInt8 data[0];
+		} mpayload127;
+		
+		struct {
+			UInt8 data[0];
+		} upayload125;
+		
+		struct { 
+			UInt16 len; // length stored here if (payloadLen == 126)
+			UInt8 data[0];
+		} upayload126;
+		
+		struct { 
+			UInt64 len; // length stored here if (payloadLen == 127)
+			UInt8 data[0];
+		} upayload127;
+	};
+	
+	
+} FrameHeader_HYBI_07;
+#pragma options align=reset
+
+
 #pragma mark Write
 
 // Internal function, write provided buffer in a frame [0x00 ... 0xff]
-static CFIndex __WebSocketClientWriteFrame(WebSocketClientRef client, const UInt8 *buffer, CFIndex length) {
+static CFIndex __WebSocketClientWriteFrame_HYBI_06(WebSocketClientRef client, CFDataRef value) {
+	
+	UInt8 *buffer = (UInt8 *)CFDataGetBytePtr(value);
+	CFIndex length = CFDataGetLength(value);
+	
 	CFIndex bytes = -1;
-	if (client) {
-		if (buffer) {
-			if (length > 0) {
-				if (CFWriteStreamCanAcceptBytes(client->write)) {
-					CFWriteStreamWrite(client->write, (UInt8[]){ 0x00 }, 1);
-					bytes = CFWriteStreamWrite(client->write, buffer, length);
-					CFWriteStreamWrite(client->write, (UInt8[]){ 0xff }, 1);
-				} else {
-					client->alive = false;
-					printf("__WebSocketClientWriteFrame: can't write to stream\n");
-				}
-			}
-		}
+	if (CFWriteStreamCanAcceptBytes(client->write)) {
+		CFWriteStreamWrite(client->write, (UInt8[]){ 0x00 }, 1);
+		bytes = CFWriteStreamWrite(client->write, buffer, length);
+		CFWriteStreamWrite(client->write, (UInt8[]){ 0xff }, 1);
+	} else {
+		client->alive = false;
+		printf("[CWS] __WebSocketClientWriteFrame: can't write to stream\n");
 	}
+
+	return bytes;
+}
+
+
+static CFIndex __WebSocketClientWriteFrame_HYBI_07(WebSocketClientRef client, CFDataRef value) 
+{
+	CFIndex payloadLen = CFDataGetLength(value);
+	CFIndex bufferLen = sizeof(FrameHeader_HYBI_07) + payloadLen;
+	UInt8 *buffer = malloc(bufferLen);
+	if (!buffer) {
+		printf("[CWS] Failed to allocate bufferr\r");
+		return -1;
+	}
+	
+	memset(buffer, 0, bufferLen);
+	FrameHeader_HYBI_07 *frame = (FrameHeader_HYBI_07 *)buffer;
+	
+	UInt8 *payload = NULL;
+	UInt8 maskingKey[4];
+	
+#if (TARGET_OS_IPHONE || TARGET_IPHONE_SIMULATOR) 
+	int error = SecRandomCopyBytes(kSecRandomDefault, sizeof(maskingKey), maskingKey);
+	if (error != 0) {
+		printf("[CWS] Failed to generate random number\r");
+		return -1;
+	}
+#else
+	int urandom = open("/dev/urandom", O_RDONLY);
+	if (urandom < 0) {
+		printf("[CWS] Failed to generate random number\r");
+		return -1;
+	}
+	
+	read(urandom, &maskingKey, sizeof(maskingKey));
+	close(urandom);
+#endif
+
+
+	frame->fin = 0x1;
+	frame->opcode = 0x1;
+	frame->mask = 0x1;
+
+	CFIndex headerLen = 0;
+
+	if (payloadLen < 126) {
+		headerLen = 2 + 4;
+		frame->payloadLen = payloadLen;
+		memcpy(frame->mpayload125.maskingKey, maskingKey, sizeof(maskingKey));
+		payload = frame->mpayload125.data;
+	}
+	else if (payloadLen <= 0xFFFF) {
+		headerLen = 2 + 2 + 4;
+		frame->payloadLen = 126;
+		frame->mpayload126.len = EndianU16_NtoB(payloadLen);
+		memcpy(frame->mpayload126.maskingKey, maskingKey, sizeof(maskingKey));
+		payload = frame->mpayload126.data;
+	}
+	else {
+		headerLen = 2 + 8 + 4;
+		frame->payloadLen = 127;
+		frame->mpayload127.len = EndianU64_NtoB(payloadLen);
+		memcpy(frame->mpayload127.maskingKey, maskingKey, sizeof(maskingKey));
+		payload = frame->mpayload127.data;
+	}
+
+	
+	int maskIndex = 0;
+	UInt8 *p = payload;
+	UInt8 *d = (UInt8 *)CFDataGetBytePtr(value);
+
+	for (int i = 0; i < payloadLen; ++i) {
+		*p++ = *d++ ^ maskingKey[maskIndex];
+		maskIndex = (maskIndex + 1) % 4;
+	}
+
+	CFIndex bytes = -1;
+	if (CFWriteStreamCanAcceptBytes(client->write)) {
+		bytes = CFWriteStreamWrite(client->write, buffer, headerLen + payloadLen);
+	} else {
+		client->alive = false;
+		printf("[CWS] __WebSocketClientWriteFrame_HYBI_07: can't write to stream\r");
+	}
+	
+	
+	free(buffer);
+	
 	return bytes;
 }
 
 CFIndex WebSocketClientWriteWithData(WebSocketClientRef client, CFDataRef value) {
-	return __WebSocketClientWriteFrame(client, CFDataGetBytePtr(value), CFDataGetLength(value));
+	if (DEBUG_WEBSOCKETCLIENT) printf("[CWS] >WebSocketClientWriteWithData\r");
+
+	if (!client || !client->write || !client->alive) return -1;
+	if (!value || CFDataGetLength(value) == 0) return -1;
+	
+	CFIndex result = -1;
+	if (client->protocol == kWebSocketProtocolDraftIETF_HYBI_07) {
+		result = __WebSocketClientWriteFrame_HYBI_07(client, value);
+	}
+	else {
+		result = __WebSocketClientWriteFrame_HYBI_06(client, value);
+	}
+	
+	if (DEBUG_WEBSOCKETCLIENT) printf("[CWS] <WebSocketClientWriteWithData: %jd\r", (intmax_t)result);
+	
+	return result;
 }
 
 CFIndex WebSocketClientWriteWithString(WebSocketClientRef client, CFStringRef value) {
+	if (DEBUG_WEBSOCKETCLIENT) printf("[CWS] >WebSocketClientWriteWithString\r");
+	
 	CFIndex bytes = -1;
-	if (client) {
-		if (value) {
-			CFDataRef data = CFStringCreateExternalRepresentation(client->allocator, value, kCFStringEncodingUTF8, 0);
-			if (data) {
-				bytes = WebSocketClientWriteWithData(client, data);
-				CFRelease(data);
-			}
-		}
+	if (!client) return bytes;
+	if (!value) return bytes;
+	
+	CFDataRef data = CFStringCreateExternalRepresentation(client->allocator, value, kCFStringEncodingUTF8, 0);
+	if (data) {
+		bytes = WebSocketClientWriteWithData(client, data);
+		CFRelease(data);
 	}
+	
+	if (DEBUG_WEBSOCKETCLIENT) printf("[CWS] <WebSocketClientWriteWithString: %jd\r", (intmax_t)bytes);
+	
 	return bytes;
 }
 
@@ -52,85 +209,250 @@ CFIndex WebSocketClientWriteWithString(WebSocketClientRef client, CFStringRef va
 
 bool __WebSocketClientWriteHandShake(WebSocketClientRef client);
 
+static void __WebSocketClientRead_HYBI_06(WebSocketClientRef client, CFReadStreamRef stream) {
+	UInt8 b[4096];
+	memset(b, 0, sizeof(b));
+	CFIndex by = 0;
+	
+	by = CFReadStreamRead(stream, b, sizeof(b) - 1);
+	if (by > 2) {
+		const char *from = (const char *)b + 1;
+		const char *to = strchr(from, 0xff);
+		while (to) {
+			if (client->webSocket->callbacks.didClientReadCallback) {
+				CFDataRef data = CFDataCreate(client->allocator, (const void *)from, to - from);
+				if (data) {
+					CFStringRef string = CFStringCreateWithBytes(client->allocator, CFDataGetBytePtr(data), CFDataGetLength(data), kCFStringEncodingUTF8, 0);
+					if (string) {
+						client->webSocket->callbacks.didClientReadCallback(client->webSocket, client, string);
+						CFRelease(string);
+					}
+					CFRelease(data);
+				}
+			}
+			from = to + 2;
+			to = strchr(from, 0xff);
+		}
+	}
+	char *end = strchr((const char *)b, 0xff);
+	if (end) {
+		*end = 0x00;
+	}
+}	
+
+
+static void __WebSocketClientRead_HYBI_07(WebSocketClientRef client, CFReadStreamRef stream) {
+	if (DEBUG_WEBSOCKETCLIENT) printf("[CWS] >__WebSocketClientRead_HYBI_07\n");
+
+	UInt8 b[4096];
+	memset(b, 0, sizeof(b));
+	CFIndex by = 0;
+	
+	by = CFReadStreamRead(stream, b, sizeof(b) - 1);
+	if (DEBUG_WEBSOCKETCLIENT) printf("[CWS] bytes: %jd\r", (intmax_t)by);
+	if (by < 2) {
+		WebSocketClientDisconnect(client);
+		return;
+	}
+	
+	FrameHeader_HYBI_07 *header = (FrameHeader_HYBI_07 *)b;
+	if (DEBUG_WEBSOCKETCLIENT) {
+		printf("Fin: %s\r", header->fin ? "yes" : "no");
+		printf("Opcode: %jd\r", (intmax_t)header->opcode);
+		printf("Masked: %s\r", header->mask ? "yes" : "no");
+		printf("Length: %jd\r", (intmax_t)header->payloadLen);
+	}
+	
+	UInt8 *payload = NULL;
+	CFIndex payloadLen = 0;
+	UInt8 *maskingKey;
+	if (header->mask) {
+		if (header->payloadLen < 126) {
+			payloadLen = header->payloadLen;
+			payload = header->mpayload125.data;
+			maskingKey = header->mpayload125.maskingKey;
+		}
+		else if (header->payloadLen == 126) {
+			payloadLen = EndianU16_BtoN(header->mpayload126.len);
+			payload = header->mpayload126.data;
+			maskingKey = header->mpayload126.maskingKey;
+		}
+		else {
+			payloadLen = EndianU64_BtoN(header->mpayload127.len);
+			payload = header->mpayload127.data;
+			maskingKey = header->mpayload127.maskingKey;
+		}
+	}
+	else {
+		if (header->payloadLen < 126) {
+			payloadLen = header->payloadLen;
+			payload = header->upayload125.data;
+		}
+		else if (header->payloadLen == 126) {
+			payloadLen = EndianU16_BtoN(header->upayload126.len);
+			payload = header->upayload126.data;
+		}
+		else {
+			payloadLen = EndianU64_BtoN(header->upayload127.len);
+			payload = header->upayload127.data;
+		}
+	}
+	
+	if (header->opcode == 0x8) {
+		printf("[CWS] Closing");
+		return;
+	}
+
+	if (header->opcode == 0x9) {
+		printf("[CWS] Ping");
+		return;
+	}
+
+	if (header->opcode == 0xA) {
+		printf("[CWS] Pong");
+		return;
+	}
+
+	printf("[CWS] Payload Length: %jd", (intmax_t)payloadLen);
+
+	if (payloadLen >= by) {
+		printf("[CWS] Invalid payload length: %jd", (intmax_t)payloadLen);
+		return;
+	}
+	
+	if (header->mask) {
+		UInt8 *p = payload;
+		int maskIndex = 0;
+		for (int i = 0; i < payloadLen; ++i) {
+			*p = *p ^ maskingKey[maskIndex];
+			p += 1;
+			maskIndex = (maskIndex + 1) % 4;
+		}
+	}
+
+	
+	if (payload) {
+		if (client->webSocket->callbacks.didClientReadCallback) {
+			CFDataRef data = CFDataCreate(client->allocator, (const void *)payload, payloadLen);
+			if (!data) {
+				printf("[CWS] Data error");
+			}
+			else {
+				CFStringRef string = CFStringCreateWithBytes(client->allocator, CFDataGetBytePtr(data), CFDataGetLength(data), kCFStringEncodingUTF8, 0);
+				if (string) {
+					if (DEBUG_WEBSOCKETCLIENT) CFShowStr(string);
+
+					client->webSocket->callbacks.didClientReadCallback(client->webSocket, client, string);
+					CFRelease(string);
+				}
+				CFRelease(data);
+			}
+		}
+	}
+	
+	if (DEBUG_WEBSOCKETCLIENT) printf("[CWS] <__WebSocketClientRead_HYBI_07\n");
+}	
+
+
+static void __WebSocketPerformHandshake(WebSocketClientRef client) {
+	if (DEBUG_WEBSOCKETCLIENT) printf("[CWS] >__WebSocketPerformHandshake\n");
+	
+	if (!__WebSocketClientReadHandShake(client)) {
+		printf("[CWS] TODO: Didn't read handshake and __WebSocketClientReadHandShake failed.\r");
+		return;
+	}
+	
+	if (client->didWriteHandShake) {
+		printf("[CWS] TODO: Just read handshake and handshake already written, shouldn't happen, fault?\r");
+		return;
+	}
+	
+	if (!client->write) {
+		printf("[CWS] Error: no write stream\r");
+	}
+	
+	if (!CFWriteStreamCanAcceptBytes(client->write)) {
+		printf("[CWS] TODO: Didn't handshake and client doesn't accept bytes yet. Write callback will handle writting handshake as soon as we can write.\r");
+		return;
+	}	
+	
+	if (__WebSocketClientWriteHandShake(client)) {
+		if (DEBUG_WEBSOCKETCLIENT) printf("Successfully written handshake\n");
+		__WebSocketAppendClient(client->webSocket, client);
+	}
+	else {
+		printf("[CWS] Error writting handshake\n");
+	}
+	
+	if (DEBUG_WEBSOCKETCLIENT) printf("[CWS] <__WebSocketPerformHandshake\n");
+}
+
+static void __WebSocketClientRead(WebSocketClientRef client, CFReadStreamRef stream) {
+	if (DEBUG_WEBSOCKETCLIENT) printf("[CWS] >__WebSocketClientRead\r");
+	
+	if (!CFReadStreamHasBytesAvailable(client->read)) {
+		printf("[CWS] Failed to read, no bytes available\r");
+		return;	
+	}
+	
+	if (client->protocol == kWebSocketProtocolDraftIETF_HYBI_06 || client->protocol == kWebSocketProtocolDraftIETF_HYBI_00) {
+		__WebSocketClientRead_HYBI_06(client, stream);
+	}
+	if (client->protocol == kWebSocketProtocolDraftIETF_HYBI_07) {
+		__WebSocketClientRead_HYBI_07(client, stream);
+	}
+	else {
+		printf("[CWS] Failed to read, protocol not supported\r");
+	}
+	
+	if (!client->didWriteHandShake && CFWriteStreamCanAcceptBytes(client->write)) {
+		__WebSocketPerformHandshake(client);
+		return;
+	}	
+	
+	if (DEBUG_WEBSOCKETCLIENT) printf("[CWS] <__WebSocketClientRead\r");
+}
+
+
 static void __WebSocketClientReadCallBack(CFReadStreamRef stream, CFStreamEventType eventType, void *info) {
 	WebSocketClientRef client = info;
-	if (client) {
-		switch (eventType) {
-			case kCFStreamEventOpenCompleted:
-				break;
-				
-			case kCFStreamEventHasBytesAvailable:
-				if (!client->didReadHandShake) {
-					if (__WebSocketClientReadHandShake(client)) {
-						if (!client->didWriteHandShake) {
-							if (CFWriteStreamCanAcceptBytes(client->write)) {
-								if (__WebSocketClientWriteHandShake(client)) {
-									//                  printf("Successfully written handshake\n");
-								} else {
-									printf("TODO: Error writting handshake\n");
-								}
-							} else {
-								//                printf("TODO: Didn't handshake and client doesn't accept bytes yet. Write callback will handle writting handshake as soon as we can write.\n");
-							}
-						} else {
-							printf("TODO: Just read handshake and handshake already written, shouldn't happen, fault?\n");
-						}
-						__WebSocketAppendClient(client->webSocket, client);
-					} else {
-						printf("TODO: Didn't read handshake and __WebSocketClientReadHandShake failed.\n");
-					}
-				} else {
-					
-					// Did handshake already and there are bytes to read.
-					// It's incomming message.
-					
-					UInt8 b[4096];
-					memset(b, 0, sizeof(b));
-					CFIndex by = 0;
-					if (CFReadStreamHasBytesAvailable(client->read)) {
-						by = CFReadStreamRead(stream, b, sizeof(b) - 1);
-						if (by > 2) {
-							const char *from = (const char *)b + 1;
-							const char *to = strchr(from, 0xff);
-							while (to) {
-								if (client->webSocket->callbacks.didClientReadCallback) {
-									CFDataRef data = CFDataCreate(client->allocator, (const void *)from, to - from);
-									if (data) {
-										CFStringRef string = CFStringCreateWithBytes(client->allocator, CFDataGetBytePtr(data), CFDataGetLength(data), kCFStringEncodingUTF8, 0);
-										if (string) {
-											client->webSocket->callbacks.didClientReadCallback(client->webSocket, client, string);
-											CFRelease(string);
-										}
-										CFRelease(data);
-									}
-								}
-								from = to + 2;
-								to = strchr(from, 0xff);
-							}
-						}
-						char *end = strchr((const char *)b, 0xff);
-						if (end) {
-							*end = 0x00;
-						}
-					} else {
-						// Something was wrong with the message
-					}
-				}
-				break;
-				
-			case kCFStreamEventErrorOccurred:
-				break;
-				
-			case kCFStreamEventEndEncountered:
-				break;
-				
-			default:
-				break;
-		}
+	if (!client) return;
+
+	switch (eventType) {
+		case kCFStreamEventOpenCompleted:
+			if (DEBUG_WEBSOCKETCLIENT) printf("[CWS] kCFStreamEventOpenCompleted\r");
+			break;
+			
+		case kCFStreamEventHasBytesAvailable:
+			if (DEBUG_WEBSOCKETCLIENT) printf("[CWS] kCFStreamEventHasBytesAvailable\r");
+			if (client->didReadHandShake && client->didWriteHandShake) {
+				// Did handshake already and there are bytes to read.
+				// It's incomming message.
+				__WebSocketClientRead(client, stream);
+			}
+			else {
+				__WebSocketPerformHandshake(client);
+			}
+
+			break;
+			
+		case kCFStreamEventErrorOccurred:
+			if (DEBUG_WEBSOCKETCLIENT) printf("[CWS] kCFStreamEventErrorOccurred\r");
+			break;
+			
+		case kCFStreamEventEndEncountered:
+			if (DEBUG_WEBSOCKETCLIENT) printf("[CWS] kCFStreamEventEndEncountered\r");
+			break;
+			
+		default:
+			printf("[CWS] Unknown event type");
+			break;
 	}
 }
 
 bool __WebSocketClientWriteWithHTTPMessage(WebSocketClientRef client, CFHTTPMessageRef message) {
+	if (DEBUG_WEBSOCKETCLIENT) printf("[CWS] Writing HTTP message: ");
+	
 	bool success = 0;
 	if (client && message) {
 		CFDataRef data = CFHTTPMessageCopySerializedMessage(message);
@@ -143,6 +465,9 @@ bool __WebSocketClientWriteWithHTTPMessage(WebSocketClientRef client, CFHTTPMess
 			CFRelease(data);
 		}
 	}
+	
+	printf(success ? "Success\r" : "Failed\r");
+
 	return success;
 }
 
@@ -222,40 +547,81 @@ static CFStringRef __WebSocketCreateBase64StringWithData(CFAllocatorRef allocato
 }
 
 static bool __WebSocketClientWriteHandShakeDraftIETF_HYBI_06(WebSocketClientRef client) {
-	bool success = 0;
-	if (client) {
-		if (client->protocol == kWebSocketProtocolDraftIETF_HYBI_06) {
-			
-			CFStringRef key = CFHTTPMessageCopyHeaderFieldValue(client->handShakeRequestHTTPMessage, CFSTR("Sec-WebSocket-Key"));
-			CFStringRef keyWithMagick = CFStringCreateWithFormat(client->allocator, NULL, CFSTR("%@%@"), key, CFSTR("258EAFA5-E914-47DA-95CA-C5AB0DC85B11"));
-			CFDataRef keyWithMagickSHA1 = __WebSocketCreateSHA1DataWithString(client->allocator, keyWithMagick, kCFStringEncodingUTF8);
-			CFStringRef keyWithMagickSHA1Base64 = __WebSocketCreateBase64StringWithData(client->allocator, keyWithMagickSHA1);
-			
-			// CFShow(keyWithMagickSHA1Base64);
-			
-			CFStringRef origin = CFHTTPMessageCopyHeaderFieldValue(client->handShakeRequestHTTPMessage, CFSTR("Sec-WebSocket-Origin"));
-			CFStringRef host = CFHTTPMessageCopyHeaderFieldValue(client->handShakeRequestHTTPMessage, CFSTR("Host"));
-			
-			CFHTTPMessageRef response = CFHTTPMessageCreateEmpty(NULL, 0);
-			CFHTTPMessageAppendBytes(response, (const UInt8 *)"HTTP/1.1 101 Switching Protocols\r\n", 44);
-			CFHTTPMessageSetHeaderFieldValue(response, CFSTR("Upgrade"), CFSTR("websocket"));
-			CFHTTPMessageSetHeaderFieldValue(response, CFSTR("Connection"), CFSTR("Upgrade"));
-			CFHTTPMessageSetHeaderFieldValue(response, CFSTR("Sec-WebSocket-Accept"), keyWithMagickSHA1Base64);
-			
-			success = __WebSocketClientWriteWithHTTPMessage(client, response);
-			
-			CFRelease(response);
-			
-			CFRelease(keyWithMagickSHA1Base64);
-			CFRelease(keyWithMagickSHA1);
-			CFRelease(keyWithMagick);
-			CFRelease(key);
-			CFRelease(origin);
-			CFRelease(host);
-		}
-	}
+	if (!client) return false;
+
+	if (DEBUG_WEBSOCKETCLIENT) printf("[CWS] WebSocketClientWriteHandShakeDraftIETF_HYBI_06\n");
+
+	CFStringRef key = CFHTTPMessageCopyHeaderFieldValue(client->handShakeRequestHTTPMessage, CFSTR("Sec-WebSocket-Key"));
+	CFStringRef keyWithMagick = CFStringCreateWithFormat(client->allocator, NULL, CFSTR("%@%@"), key, CFSTR("258EAFA5-E914-47DA-95CA-C5AB0DC85B11"));
+	CFDataRef keyWithMagickSHA1 = __WebSocketCreateSHA1DataWithString(client->allocator, keyWithMagick, kCFStringEncodingUTF8);
+	CFStringRef keyWithMagickSHA1Base64 = __WebSocketCreateBase64StringWithData(client->allocator, keyWithMagickSHA1);
+	
+	// CFShow(keyWithMagickSHA1Base64);
+	
+	CFStringRef origin = CFHTTPMessageCopyHeaderFieldValue(client->handShakeRequestHTTPMessage, CFSTR("Sec-WebSocket-Origin"));
+	CFStringRef host = CFHTTPMessageCopyHeaderFieldValue(client->handShakeRequestHTTPMessage, CFSTR("Host"));
+	
+	if (client->origin) CFRelease(client->origin);
+	client->origin = CFRetain(origin);
+	
+	CFHTTPMessageRef response = CFHTTPMessageCreateEmpty(NULL, 0);
+	CFHTTPMessageAppendBytes(response, (const UInt8 *)"HTTP/1.1 101 Switching Protocols\r\n", 44);
+	CFHTTPMessageSetHeaderFieldValue(response, CFSTR("Upgrade"), CFSTR("websocket"));
+	CFHTTPMessageSetHeaderFieldValue(response, CFSTR("Connection"), CFSTR("Upgrade"));
+	CFHTTPMessageSetHeaderFieldValue(response, CFSTR("Sec-WebSocket-Accept"), keyWithMagickSHA1Base64);
+	
+	bool success = __WebSocketClientWriteWithHTTPMessage(client, response);
+	
+	CFRelease(response);
+	
+	CFRelease(keyWithMagickSHA1Base64);
+	CFRelease(keyWithMagickSHA1);
+	CFRelease(keyWithMagick);
+	CFRelease(key);
+	CFRelease(origin);
+	CFRelease(host);
+
 	return success;
 }
+
+static bool __WebSocketClientWriteHandShakeDraftIETF_HYBI_07(WebSocketClientRef client) {
+	if (!client) return false;
+	
+	if (DEBUG_WEBSOCKETCLIENT) printf("[CWS] WebSocketClientWriteHandShakeDraftIETF_HYBI_07\n");
+	
+	CFStringRef key = CFHTTPMessageCopyHeaderFieldValue(client->handShakeRequestHTTPMessage, CFSTR("Sec-WebSocket-Key"));
+	CFStringRef keyWithMagick = CFStringCreateWithFormat(client->allocator, NULL, CFSTR("%@%@"), key, CFSTR("258EAFA5-E914-47DA-95CA-C5AB0DC85B11"));
+	CFDataRef keyWithMagickSHA1 = __WebSocketCreateSHA1DataWithString(client->allocator, keyWithMagick, kCFStringEncodingUTF8);
+	CFStringRef keyWithMagickSHA1Base64 = __WebSocketCreateBase64StringWithData(client->allocator, keyWithMagickSHA1);
+	
+	// CFShow(keyWithMagickSHA1Base64);
+	
+	CFStringRef origin = CFHTTPMessageCopyHeaderFieldValue(client->handShakeRequestHTTPMessage, CFSTR("Sec-WebSocket-Origin"));
+	CFStringRef host = CFHTTPMessageCopyHeaderFieldValue(client->handShakeRequestHTTPMessage, CFSTR("Host"));
+	
+	if (client->origin) CFRelease(client->origin);
+	client->origin = CFRetain(origin);
+	
+	CFHTTPMessageRef response = CFHTTPMessageCreateEmpty(NULL, 0);
+	CFHTTPMessageAppendBytes(response, (const UInt8 *)"HTTP/1.1 101 Switching Protocols\r\n", 44);
+	CFHTTPMessageSetHeaderFieldValue(response, CFSTR("Upgrade"), CFSTR("websocket"));
+	CFHTTPMessageSetHeaderFieldValue(response, CFSTR("Connection"), CFSTR("Upgrade"));
+	CFHTTPMessageSetHeaderFieldValue(response, CFSTR("Sec-WebSocket-Accept"), keyWithMagickSHA1Base64);
+	
+	bool success = __WebSocketClientWriteWithHTTPMessage(client, response);
+	
+	CFRelease(response);
+	
+	CFRelease(keyWithMagickSHA1Base64);
+	CFRelease(keyWithMagickSHA1);
+	CFRelease(keyWithMagick);
+	CFRelease(key);
+	CFRelease(origin);
+	CFRelease(host);
+	
+	return success;
+}
+
 
 bool __WebSocketClientWriteHandShake(WebSocketClientRef client) {
 	bool success = 0;
@@ -268,8 +634,11 @@ bool __WebSocketClientWriteHandShake(WebSocketClientRef client) {
 				case kWebSocketProtocolDraftIETF_HYBI_06:
 					success = __WebSocketClientWriteHandShakeDraftIETF_HYBI_06(client);
 					break;
+				case kWebSocketProtocolDraftIETF_HYBI_07:
+					success = __WebSocketClientWriteHandShakeDraftIETF_HYBI_07(client);
+					break;
 				default:
-					printf("Unknown protocol, can't write handshake. TODO: disconnect\n");
+					printf("Unsupported protocol, can't write handshake. TODO: disconnect\n");
 					// Unknown protocol, can't write handshake
 					break;
 			}
@@ -512,66 +881,90 @@ fin:
 }
 
 static bool __WebSocketClientHandShakeUpdateProtocolBasedOnHTTPMessage(WebSocketClientRef client) {
-	bool success = 0;
-	if (client) {
-		
-		// Get the protocol version
-		client->protocol = kWebSocketProtocolUnknown;
-		CFStringRef upgrade = CFHTTPMessageCopyHeaderFieldValue(client->handShakeRequestHTTPMessage, CFSTR("Upgrade"));
-		if (upgrade) {
-			if (CFStringCompare(CFSTR("WebSocket"), upgrade, kCFCompareCaseInsensitive) == kCFCompareEqualTo) {
-				CFStringRef version = CFHTTPMessageCopyHeaderFieldValue(client->handShakeRequestHTTPMessage, CFSTR("Sec-WebSocket-Version"));
-				if (version) {
-					if (CFStringCompare(CFSTR("6"), version, kCFCompareCaseInsensitive) == kCFCompareEqualTo) {
-						client->protocol = kWebSocketProtocolDraftIETF_HYBI_06;
-						success = 1;
-					} else { // Version different than 6, we don't know of any other, leave the protocol as unknown
-					}
-					CFRelease(version);
-				} else {
-					
-					// Sec-WebSocket-Version header field is missing.
-					// It may be 00 protocol, which doesn't have this field.
-					// 00 protocol has to have Sec-WebSocket-Key1 and Sec-WebSocket-Key2
-					// fields - let's check for those.
-					CFStringRef key1 = CFHTTPMessageCopyHeaderFieldValue(client->handShakeRequestHTTPMessage, CFSTR("Sec-WebSocket-Key1"));
-					if (key1) {
-						CFStringRef key2 = CFHTTPMessageCopyHeaderFieldValue(client->handShakeRequestHTTPMessage, CFSTR("Sec-WebSocket-Key2"));
-						if (key2) {
-							client->protocol = kWebSocketProtocolDraftIETF_HYBI_00;
-							success = 1;
-							CFRelease(key2);
-						}
-						CFRelease(key1);
-					} else { // Key2 missing, no version specified = unknown protocol
-					}
-				}
-			} else { // Upgrade HTTP field seems to be different from "WebSocket" (case ignored)
-			}
-			CFRelease(upgrade);
-		} else { // Upgrade HTTP field seems to be absent
-		}
+	if (!client) return false;
+
+	client->protocol = kWebSocketProtocolUnknown;
+	CFStringRef upgrade = CFHTTPMessageCopyHeaderFieldValue(client->handShakeRequestHTTPMessage, CFSTR("Upgrade"));
+	if (!upgrade) {
+		printf("[CWS] Upgrade field is missing");
+		return false;
 	}
+	
+	bool isWebSocket = (CFStringCompare(CFSTR("WebSocket"), upgrade, kCFCompareCaseInsensitive) == kCFCompareEqualTo);
+	CFRelease(upgrade);
+
+	if (!isWebSocket) {
+		printf("[CWS] Error: invalid Upgrade HTTP field, expected WebSocket");
+		return false;
+	}
+	
+	bool success = false;
+	CFStringRef version = CFHTTPMessageCopyHeaderFieldValue(client->handShakeRequestHTTPMessage, CFSTR("Sec-WebSocket-Version"));
+	if (version) {
+		if (CFStringCompare(CFSTR("6"), version, kCFCompareCaseInsensitive) == kCFCompareEqualTo) {
+			printf("[CWS] Protocol: HYBI_06\n");
+			client->protocol = kWebSocketProtocolDraftIETF_HYBI_06;
+			success = true;
+		} 
+		else if (CFStringCompare(CFSTR("7"), version, kCFCompareCaseInsensitive) == kCFCompareEqualTo) {
+			printf("[CWS] Protocol: HYBI_07\n");
+			client->protocol = kWebSocketProtocolDraftIETF_HYBI_07;
+			success = true;
+		} 
+		else if (CFStringCompare(CFSTR("10"), version, kCFCompareCaseInsensitive) == kCFCompareEqualTo) {
+			printf("[CWS] Protocol: HYBI_10\n");
+			client->protocol = kWebSocketProtocolDraftIETF_HYBI_10;
+			success = true;
+		} 
+		else { // Version different than 6, we don't know of any other, leave the protocol as unknown
+			printf("Unsupported protocol version: ");
+			CFShowStr(version);
+		}
+		CFRelease(version);
+	} 
+	else {
+		// Sec-WebSocket-Version header field is missing.
+		// It may be 00 protocol, which doesn't have this field.
+		// 00 protocol has to have Sec-WebSocket-Key1 and Sec-WebSocket-Key2
+		// fields - let's check for those.
+		CFStringRef key1 = CFHTTPMessageCopyHeaderFieldValue(client->handShakeRequestHTTPMessage, CFSTR("Sec-WebSocket-Key1"));
+		CFStringRef key2 = CFHTTPMessageCopyHeaderFieldValue(client->handShakeRequestHTTPMessage, CFSTR("Sec-WebSocket-Key2"));
+		if (key1 && key2) {
+			client->protocol = kWebSocketProtocolDraftIETF_HYBI_00;
+			success = true;
+		}
+		else { // Key2 missing, no version specified = unknown protocol
+			printf("[CWS] Unknown protocol.");
+		}
+		
+		if (key1) CFRelease(key1);
+		if (key2) CFRelease(key2);
+	}
+
 	return success;
 }
 
 bool __WebSocketClientReadHandShake(WebSocketClientRef client) {
-	bool success = 0;
-	if (client) {
-		if ((success = __WebSocketClientHandShakeConsumeHTTPMessage(client))) {
-			if ((success = __WebSocketClientHandShakeUpdateProtocolBasedOnHTTPMessage(client))) {
-				
-				// Dump http message
-				CFDictionaryRef headerFields = CFHTTPMessageCopyAllHeaderFields(client->handShakeRequestHTTPMessage);
-				if (headerFields) {
-					// CFShow(headerFields);
-					CFRelease(headerFields);
-				}
-				//        printf("__WebSocketClientReadHandShake: protocol %i\n", client->protocol);
-			}
-		}
-		client->didReadHandShake = 1;
+	if (!client) return false;
+	
+	bool success = __WebSocketClientHandShakeConsumeHTTPMessage(client);
+	if (success) success = __WebSocketClientHandShakeUpdateProtocolBasedOnHTTPMessage(client);
+	
+	if (!success) {
+		printf("[CWS] Failed to read handshake\r");
+		return false;
 	}
-	return success;
+
+	client->didReadHandShake = 1;
+	if (DEBUG_WEBSOCKETCLIENT) {
+		// Dump http message
+		CFDictionaryRef headerFields = CFHTTPMessageCopyAllHeaderFields(client->handShakeRequestHTTPMessage);
+		if (headerFields) {
+			CFShow(headerFields);
+			CFRelease(headerFields);
+		}
+	}
+
+	return true;
 }
 

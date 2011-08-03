@@ -30,7 +30,9 @@ typedef enum WebSocketProtocol WebSocketProtocol;
 enum WebSocketProtocol {
 	kWebSocketProtocolUnknown           = -1,
 	kWebSocketProtocolDraftIETF_HYBI_00 =  0,
-	kWebSocketProtocolDraftIETF_HYBI_06 =  6
+	kWebSocketProtocolDraftIETF_HYBI_06 =  6,
+	kWebSocketProtocolDraftIETF_HYBI_07 =  7,
+	kWebSocketProtocolDraftIETF_HYBI_10 =  10
 };
 
 #pragma mark WebSocket Callbacks
